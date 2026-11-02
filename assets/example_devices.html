@@ -1,0 +1,63 @@
+<style>
+/* 카운터: --n을 키프레임으로 올리고 ::after로 표시. 소수·쉼표는 표시 조각을 나눠 만든다. */
+@property --n{syntax:'<integer>';inherits:false;initial-value:0}
+.cnt{counter-reset:n var(--n);animation:cnt 1.4s var(--ease) both var(--d,0s);}
+.cnt::after{content:counter(n);}
+@keyframes cnt{to{--n:631}}
+.stat{position:absolute;left:72px;top:170px;width:330px;height:190px;padding:22px 26px;}
+.stat .v{font-size:72px;font-weight:700;margin-top:14px;}
+
+/* 도넛: 트랙 위에 pathLength=100 호를 그리고 stroke-dashoffset을 (100 - 값)까지 움직인다. */
+.ring{stroke-dasharray:100;stroke-dashoffset:100;animation:ring 1.4s var(--ease) forwards var(--d,0s);}
+@keyframes ring{to{stroke-dashoffset:var(--to)}}
+.gauge{position:absolute;left:72px;top:380px;width:330px;height:270px;}
+.gauge b{position:absolute;left:0;right:0;top:92px;text-align:center;font-size:44px;}
+
+/* 막대: 트랙 안의 .gx가 왼쪽에서 자란다. 길이는 값에 비례하게 width로 지정. */
+.bars{position:absolute;left:430px;top:380px;width:778px;height:270px;padding:22px 26px;}
+.row{display:flex;align-items:center;gap:16px;margin-top:18px;font-size:20px;font-weight:600;}
+.row span{width:110px;}
+.row i{height:28px;border-radius:8px;background:var(--c);}
+
+.node{position:absolute;top:210px;width:210px;height:110px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:22px;font-weight:700;}
+.node .ico{font-size:30px;}
+</style>
+<!--body-->
+<div class="cam">
+<div class="kicker">시각 장치 예시</div>
+<h1 class="h1">흐름도 · 도넛 · 카운터 · 막대</h1>
+
+<!-- 카운터 -->
+<div class="stat glass in" style="--d:{c1}s">
+ <div class="pk">불량 건수</div>
+ <div class="v mono wr"><span class="cnt" style="--d:{c1+0.3}s"></span><span class="unit">건</span></div>
+</div>
+
+<!-- 흐름도: svg.st는 viewBox="0 0 1280 720"으로 프레임과 좌표를 맞춘다. 연결선을 노드보다 먼저 둔다.
+     pathLength="100"이면 길이를 계산하지 않고 --len:100으로 그릴 수 있다. -->
+<svg class="st" viewBox="0 0 1280 720" width="1280" height="720" fill="none">
+ <path class="draw" pathLength="100" style="--len:100;--d:{c2+0.4}s" d="M640 265H700" stroke="#22e1ff" stroke-width="3"/>
+ <path class="draw" pathLength="100" style="--len:100;--d:{c3+0.4}s" d="M910 265H970" stroke="#22e1ff" stroke-width="3"/>
+</svg>
+<div class="node glass pop" style="left:430px;--d:{c2}s">[[file cy]]문서</div>
+<div class="node glass pop" style="left:700px;--d:{c3}s">[[cut pu]]분할</div>
+<div class="node glass pop lit" style="left:970px;width:238px;--d:{c3+0.8}s;--l:{c3+1.4}s">[[db bl]]저장</div>
+
+<!-- 도넛: 값 16%면 --to:84. rotate(-90)으로 12시에서 시작한다. -->
+<div class="gauge glass in" style="--d:{c4}s">
+ <svg class="ab" style="left:55px;top:25px" width="220" height="220" viewBox="0 0 220 220" fill="none">
+  <circle cx="110" cy="110" r="88" stroke="#ffffff1a" stroke-width="18"/>
+  <circle class="ring" pathLength="100" cx="110" cy="110" r="88" stroke="#ff5d73" stroke-width="18" stroke-linecap="round"
+    transform="rotate(-90 110 110)" style="--to:84;--d:{c4+0.3}s"/>
+ </svg>
+ <b class="mono">16<span class="unit">%</span></b>
+</div>
+
+<!-- 막대 -->
+<div class="bars glass in" style="--d:{c5}s">
+ <div class="pk">공급사별</div>
+ <div class="row ng"><span>A</span><i class="gx" style="width:520px;--d:{c5+0.3}s"></i></div>
+ <div class="row cau"><span>B</span><i class="gx" style="width:300px;--d:{c5+0.5}s"></i></div>
+ <div class="row ok"><span>C</span><i class="gx" style="width:140px;--d:{c5+0.7}s"></i></div>
+</div>
+</div>

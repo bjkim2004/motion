@@ -1,0 +1,244 @@
+<style data-clean-start>html{visibility:hidden}</style><script data-clean-start>
+(function () {
+  var paused = false, shown = false;
+  addEventListener("message", function (e) {
+    var t = e.data && e.data.type;
+    if (t === "player:pause") paused = true;
+    else if (t === "player:play") paused = false;
+  });
+  function holdFirstFrames(anims) {
+    var groups = new Map();
+    anims.forEach(function (a) {
+      var eff = a.effect;
+      if (!eff || !eff.target || !eff.getTiming) return;
+      var key = eff.pseudoElement || "";
+      var byPseudo = groups.get(eff.target) || new Map();
+      groups.set(eff.target, byPseudo);
+      (byPseudo.get(key) || byPseudo.set(key, []).get(key)).push(a);
+    });
+    groups.forEach(function (byPseudo) {
+      byPseudo.forEach(function (list) {
+        var first = Math.min.apply(null, list.map(function (a) { return a.effect.getTiming().delay || 0; }));
+        list.forEach(function (a) {
+          var t = a.effect.getTiming();
+          if ((t.delay || 0) !== first) return;
+          if (t.fill === "forwards") a.effect.updateTiming({ fill: "both" });
+          else if (t.fill === "none" || t.fill === "auto") a.effect.updateTiming({ fill: "backwards" });
+        });
+      });
+    });
+  }
+  // Underlines under headings are often generated with a fixed width (e.g. 400px) that does not
+  // match the heading. Once fonts are loaded, size each rule to its heading's actual text width.
+  function ownText(el) {
+    return Array.prototype.some.call(el.childNodes, function (n) { return n.nodeType === 3 && n.textContent.trim(); });
+  }
+  function isHeading(el) {
+    if (!(el instanceof HTMLElement) || !el.textContent.trim()) return false;
+    return parseFloat(getComputedStyle(el).fontSize) >= 40;
+  }
+  // Measure a heading as it looks once its entrance is over (entrances often start scaled or
+  // letter-spaced), then restore the animation clock.
+  function atFinalState(el, fn) {
+    var saved = [];
+    (el.getAnimations ? el.getAnimations({ subtree: true }) : []).forEach(function (a) {
+      var end = a.effect.getComputedTiming().endTime;
+      if (!isFinite(end)) return;
+      saved.push([a, a.currentTime]);
+      a.currentTime = Math.max(0, end - 1);
+    });
+    try { return fn(); } finally { saved.forEach(function (s) { s[0].currentTime = s[1]; }); }
+  }
+  function textBox(el) {
+    return atFinalState(el, function () {
+      var range = document.createRange();
+      range.selectNodeContents(el);
+      var tb = range.getBoundingClientRect(), eb = el.getBoundingClientRect();
+      if (!tb.width || !eb.width) return null;
+      // Undo transforms on the heading or its ancestors (e.g. a slow camera zoom) to get layout px.
+      var k = el.offsetWidth / eb.width;
+      return { left: el.offsetLeft + (tb.left - eb.left) * k, width: tb.width * k, bottom: el.offsetTop + el.offsetHeight };
+    });
+  }
+  function fitUnderlines() {
+    var all = Array.prototype.slice.call(document.body.querySelectorAll("*"));
+    var headings = all.filter(function (el) {
+      return (ownText(el) || el.children.length) && isHeading(el) && !isHeading(el.parentElement);
+    });
+    headings.forEach(function (h) {
+      var cs = getComputedStyle(h);
+      var leftAligned = cs.textAlign === "left" || cs.textAlign === "start";
+      // Underline drawn by the heading itself (::after / ::before / border-bottom) spans the whole block.
+      var deco = ["::after", "::before"].some(function (p) {
+        var ps = getComputedStyle(h, p);
+        return ps.content && ps.content !== "none" && parseFloat(ps.height) <= 4;
+      }) || parseFloat(cs.borderBottomWidth) > 0;
+      if (deco && leftAligned && cs.display === "block") h.style.width = "fit-content";
+
+      var tb = textBox(h);
+      if (!tb) return;
+      var target = Math.round(tb.width);
+      all.forEach(function (el) {
+        if (!(el instanceof HTMLElement) || el === h || el.textContent.trim() || el.offsetParent !== h.offsetParent) return;
+        if (el.offsetHeight > 4) return;
+        var anims = el.getAnimations ? el.getAnimations() : [];
+        var full = el.dataset.fitFull ? Number(el.dataset.fitFull) : el.offsetWidth;
+        anims.forEach(function (a) {
+          (a.effect.getKeyframes ? a.effect.getKeyframes() : []).forEach(function (k) {
+            if (k.width && /px$/.test(k.width)) full = Math.max(full, parseFloat(k.width));
+          });
+        });
+        if (full <= 24 || Math.abs(full - target) <= 6) return;
+        var gap = el.offsetTop - tb.bottom;
+        if (gap < -12 || gap > 72) return;
+        var left = el.offsetLeft;
+        var alignedLeft = Math.abs(left - tb.left) <= 24;
+        var centered = Math.abs(left + full / 2 - (tb.left + tb.width / 2)) <= 24;
+        if (!alignedLeft && !centered) return;
+        el.dataset.fitFull = full;
+        el.style.width = target + "px";
+        // Positioned rules also get the text's left edge (covers centered headings exactly).
+        if (getComputedStyle(el).position !== "static") el.style.left = Math.round(tb.left) + "px";
+        anims.forEach(function (a) {
+          if (!a.effect.getKeyframes) return;
+          var frames = a.effect.getKeyframes();
+          if (!frames.some(function (k) { return k.width; })) return;
+          a.effect.setKeyframes(frames.map(function (k) {
+            var f = {};
+            for (var key in k) if (key !== "computedOffset") f[key] = k[key];
+            if (f.width && parseFloat(f.width) >= full - 1) f.width = target + "px";
+            return f;
+          }));
+        });
+      });
+    });
+  }
+  // Minimum readable text: any text drawn smaller than MIN_FONT frame px (HTML, SVG scaled by its
+  // viewBox, or ::before/::after content) is raised to MIN_FONT. Measured from authored sizes, so
+  // entrance transforms and the slow camera zoom don't affect it.
+  var MIN_FONT = 18;
+  function svgScale(n) {
+    var k = 1;
+    for (; n && n instanceof SVGElement; n = n.parentNode) {
+      var tl = n.transform && n.transform.baseVal;
+      if (tl && tl.numberOfItems) { var m = tl.consolidate().matrix; k *= Math.hypot(m.a, m.b); }
+      var vb = n.viewBox && n.viewBox.baseVal;
+      if (n.tagName.toLowerCase() === "svg" && vb && vb.width && vb.height) {
+        var outer = !(n.parentNode instanceof SVGElement);
+        var w = outer ? n.clientWidth : n.width.baseVal.value, h = outer ? n.clientHeight : n.height.baseVal.value;
+        if (!w || !h) continue;
+        var sx = w / vb.width, sy = h / vb.height;
+        k *= /slice/.test(n.getAttribute("preserveAspectRatio") || "") ? Math.max(sx, sy) : Math.min(sx, sy);
+      }
+    }
+    return k;
+  }
+  function textScale(el) {
+    if (el instanceof SVGElement) return svgScale(el);
+    var fo = el.closest && el.closest("foreignObject");
+    return fo ? svgScale(fo) : 1;
+  }
+  function enforceMinFont() {
+    var rules = [], seen = new Set(), walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    function raise(el, pseudo) {
+      var k = textScale(el);
+      if (!(k > 0.05)) return;
+      var px = parseFloat(getComputedStyle(el, pseudo).fontSize) * k;
+      if (!(px > 0) || px >= MIN_FONT - 0.05) return;
+      var target = (MIN_FONT / k).toFixed(2) + "px";
+      if (!pseudo) return el.style.setProperty("font-size", target, "important");
+      var id = "mf" + rules.length;
+      el.setAttribute("data-minfont", (el.getAttribute("data-minfont") || "") + " " + id);
+      rules.push('[data-minfont~="' + id + '"]' + pseudo + "{font-size:" + target + " !important}");
+    }
+    while (walker.nextNode()) {
+      var el = walker.currentNode.parentElement;
+      if (!walker.currentNode.textContent.trim() || !el || seen.has(el) || el.closest("style,script,title,defs")) continue;
+      seen.add(el);
+      raise(el, null);
+    }
+    Array.prototype.forEach.call(document.body.querySelectorAll("*"), function (el) {
+      ["::before", "::after"].forEach(function (p) {
+        var c = getComputedStyle(el, p).content;
+        if (c && c !== "none" && c !== "normal" && c !== '""' && c !== "''") raise(el, p);
+      });
+    });
+    if (rules.length) {
+      var st = document.createElement("style");
+      st.setAttribute("data-minfont", "");
+      st.textContent = rules.join("\n");
+      document.head.appendChild(st);
+    }
+  }
+  function svgs(fn) {
+    Array.prototype.forEach.call(document.querySelectorAll("svg"), function (s) { s[fn] && s[fn](); });
+  }
+  function start() {
+    try { enforceMinFont(); } catch (err) { /* never block the scene */ }
+    var anims = document.getAnimations ? document.getAnimations() : [];
+    try { holdFirstFrames(anims); } catch (err) { /* never block the scene */ }
+    anims.forEach(function (a) { if (a.playState === "running") a.pause(); });
+    svgs("pauseAnimations");
+    function fit() {
+      try { fitUnderlines(); } catch (err) { /* cosmetic only */ }
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit, function () {});
+    function show() {
+      if (shown) return;
+      shown = true;
+      fit();
+      if (!paused) {
+        (document.getAnimations ? document.getAnimations() : []).forEach(function (a) { if (a.playState === "paused") a.play(); });
+        svgs("unpauseAnimations");
+      }
+      var hide = document.querySelector("style[data-clean-start]");
+      if (hide) hide.remove();
+    }
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(show, show);
+    setTimeout(show, 400);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+})();
+</script><link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" data-scene-fonts><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" data-scene-fonts><script data-player-bridge>
+addEventListener("message", function (e) {
+  var d = e.data || {};
+  var anims = document.getAnimations ? document.getAnimations() : [];
+  var svgs = document.querySelectorAll("svg");
+  if (d.type === "player:pause") {
+    anims.forEach(function (a) { if (a.playState === "running") a.pause(); });
+    svgs.forEach(function (s) { s.pauseAnimations && s.pauseAnimations(); });
+  } else if (d.type === "player:play") {
+    anims.forEach(function (a) { if (a.playState === "paused") a.play(); });
+    svgs.forEach(function (s) { s.unpauseAnimations && s.unpauseAnimations(); });
+  } else if (d.type === "player:seek") {
+    seekScene(d.t);
+  } else if (d.type === "player:rate" && d.rate > 0) {
+    window.__playerRate = d.rate;
+    applyRate();
+  }
+});
+// Scene playback speed: scales every CSS/WAAPI animation clock, and tells the player it took effect.
+function applyRate() {
+  var r = window.__playerRate || 1;
+  var anims = document.getAnimations ? document.getAnimations() : [];
+  anims.forEach(function (a) { if (a.playbackRate !== r) a.playbackRate = r; });
+  try { parent.postMessage({ type: "scene:rate", rate: r, count: anims.length }, "*"); } catch (err) {}
+}
+// Seeking: every scene animation runs on one clock that starts with the scene, so jumping to scene
+// time `ms` means setting each animation (and SMIL) to `ms`. The player passes the start point of a
+// freshly loaded scene as window.__playerSeek.
+function seekScene(ms) {
+  ms = Math.max(0, +ms || 0);
+  (document.getAnimations ? document.getAnimations() : []).forEach(function (a) { try { a.currentTime = ms; } catch (err) {} });
+  document.querySelectorAll("svg").forEach(function (s) { s.setCurrentTime && s.setCurrentTime(ms / 1000); });
+}
+document.addEventListener("DOMContentLoaded", function () { if (window.__playerSeek > 0) seekScene(window.__playerSeek); });
+addEventListener("load", function () {
+  // Animations created after DOMContentLoaded are still at 0: move them too.
+  var ms = window.__playerSeek;
+  if (ms > 50) (document.getAnimations ? document.getAnimations() : []).forEach(function (a) { if ((a.currentTime || 0) < 50) try { a.currentTime = ms; } catch (err) {} });
+});
+document.addEventListener("DOMContentLoaded", applyRate);
+addEventListener("load", applyRate);
+</script>

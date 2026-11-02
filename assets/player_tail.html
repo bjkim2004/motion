@@ -1,0 +1,232 @@
+;
+const frame = document.getElementById("frame"), stage = document.getElementById("stage");
+const sub = document.getElementById("sub"), playBtn = document.getElementById("play");
+const progEl = document.querySelector("#prog div"), info = document.getElementById("info");
+const progBar = document.getElementById("prog"), tipEl = document.getElementById("tip"), timeEl = document.getElementById("time");
+// The progress bar spans the whole video: scene i occupies [starts[i], starts[i] + its duration).
+const starts = []; let total = 0;
+DATA.scenes.forEach(s => { starts.push(total); total += s.durationSec * 1000; });
+let dragging = false;
+const synth = window.speechSynthesis;
+let idx = 0, playing = false, started = false, tts = true, elapsed = 0, last = 0, speechDone = true, token = 0;
+// Playback speeds: vRate scales the scene animations and scene clock, nRate the narration.
+let vRate = 1, nRate = 1, linked = true, ackRate = 0, lastRatePost = 0;
+try { const r = JSON.parse(localStorage.getItem("player:rates") || "{}"); if (r.v > 0) vRate = r.v; if (r.n > 0) nRate = r.n; if (r.l === false) linked = false; } catch (e) {}
+// A/V sync: the scene clock and subtitles hold until the narration clock has actually started moving
+// (decoding and opening the audio output take a moment), then wait `lat` ms more to cover HDMI / projector
+// audio latency, so what is heard lines up with what is shown. ?lat=200 also sets it.
+let lat = 0, holdUntil = 0, holdSince = 0, holdAudioT = 0;
+try { const q = new URLSearchParams(location.search).get("lat"); const v = q !== null ? +q : +(localStorage.getItem("player:latency") || 0); if (v >= 0 && v <= 3000) lat = v; } catch (e) {}
+
+function fit(){ frame.style.transform = "scale(" + stage.clientWidth / 1280 + ")"; }
+new ResizeObserver(fit).observe(stage);
+
+function post(type, extra){ frame.contentWindow && frame.contentWindow.postMessage(Object.assign({ type }, extra), "*"); }
+function voiceFor(lang){
+  const vs = synth ? synth.getVoices() : [];
+  const exact = vs.filter(v => v.lang === lang);
+  const pool = exact.length ? exact : vs.filter(v => v.lang.startsWith(lang.slice(0,2)));
+  const rank = v => /natural/i.test(v.name) ? 0 : /online|google/i.test(v.name) ? 1 : 2;
+  return pool.sort((a, b) => rank(a) - rank(b))[0];
+}
+function sentences(t){ return (t.match(/[^.!?。！？]+[.!?。！？]*/g) || [t]).map(s => s.trim()).filter(Boolean); }
+
+// Chrome workarounds: resume after cancel (else stays paused), delay speak after cancel,
+// keep utterances referenced (GC drops "end"), and a watchdog in case "end" never fires.
+const live = new Set();
+const au = new Audio(); let mode = null;
+function resetSpeech(){
+  au.onended = au.ontimeupdate = au.onerror = au.onloadedmetadata = null; au.pause(); mode = null;
+  if (!synth) return; synth.cancel(); if (synth.paused) synth.resume(); live.clear();
+}
+// Voicebox audio when embedded (subtitles follow its sentence timings), browser speech otherwise.
+function cueAt(cues, t){ let i = -1; for (let k = 0; k < cues.length && cues[k].start <= t + 0.05; k++) i = k; return i; }
+// `at`: where in the narration to start (seconds); `play`: start sounding now, or just get ready.
+function narrate(s, at, play){
+  at = at || 0;
+  if (!tts || !s.audio) {
+    if (!play) { mode = null; speechDone = true; sub.textContent = s.caption || s.narration; return; }
+    mode = "speech";
+    if (!synth) { speechDone = true; sub.textContent = s.caption || s.narration; return; }
+    return speak(s.narration, s.caption);
+  }
+  mode = "audio"; speechDone = false;
+  const cues = s.audio.cues; let shown = -1;
+  au.src = s.audio.src; au.defaultPlaybackRate = au.playbackRate = nRate;
+  const first = Math.max(0, cueAt(cues, at));
+  sub.textContent = cues.length ? cues[first].text : (s.caption || s.narration);
+  au.ontimeupdate = () => { const i = cueAt(cues, au.currentTime - lat * nRate / 1000); if (i >= 0 && i !== shown) { shown = i; sub.textContent = cues[i].text; } };
+  au.onended = () => { speechDone = true; };
+  au.onerror = () => { speechDone = true; releaseHold(); };
+  const go = () => {
+    au.onloadedmetadata = null;
+    if (at > 0 && isFinite(au.duration) && at >= au.duration - 0.05) { speechDone = true; releaseHold(); return; } // past the end of the narration
+    if (at > 0) au.currentTime = at;
+    if (play) au.play().catch(() => { speechDone = true; releaseHold(); });
+  };
+  if (au.readyState >= 1) go(); else au.onloadedmetadata = go;
+}
+// Hold the scene until the audio position moves past where it was (Infinity), or for `lat` ms without audio.
+function startHold(waitForAudio, fromT){ holdSince = performance.now(); holdAudioT = fromT; holdUntil = waitForAudio ? Infinity : (lat ? holdSince + lat : 0); }
+function releaseHold(){ if (holdUntil) holdUntil = performance.now(); }
+function pauseNarration(){ if (mode === "audio") au.pause(); else if (synth) synth.pause(); }
+function resumeNarration(){ if (mode === "audio") au.play().catch(() => {}); else if (synth) synth.resume(); }
+function speak(text, caption){
+  const my = ++token; resetSpeech();
+  if (!tts) { speechDone = true; sub.textContent = caption || text; return; }
+  speechDone = false;
+  const parts = sentences(text); let i = 0;
+  const next = () => {
+    if (my !== token) return;
+    if (i >= parts.length) { speechDone = true; return; }
+    const s = parts[i]; i++;
+    const u = new SpeechSynthesisUtterance(s); sub.textContent = s;
+    u.lang = DATA.lang; u.rate = nRate; const v = voiceFor(DATA.lang); if (v) u.voice = v;
+    let finished = false, wd;
+    const finish = () => { if (finished) return; finished = true; clearTimeout(wd); live.delete(u); next(); };
+    const arm = () => { clearTimeout(wd); wd = setTimeout(finish, s.length * 250 / nRate + 4000); };
+    u.onend = finish; u.onerror = finish; u.onstart = arm; u.onresume = arm; u.onpause = () => clearTimeout(wd);
+    live.add(u); synth.speak(u); arm();
+  };
+  setTimeout(next, 80);
+}
+
+// `offset`: scene time (ms) to start from; `seeked`: the user picked a position (stay "started" while paused).
+function load(i, autoplay, offset, seeked){
+  offset = offset || 0;
+  idx = i; elapsed = offset; started = autoplay || !!seeked; token++; resetSpeech();
+  const s = DATA.scenes[i];
+  if (autoplay) startHold(tts && !!s.audio, offset / 1000); else holdUntil = 0;
+  frame.onload = () => { post("player:rate", { rate: vRate }); if (!autoplay || performance.now() < holdUntil) post("player:pause"); };
+  ackRate = 0;
+  frame.srcdoc = s.html.replace("<head>", "<head><script>window.__playerRate=" + vRate + ";window.__playerSeek=" + Math.round(offset) + "<\/script>");
+  info.textContent = (i + 1) + " / " + DATA.scenes.length + " · " + s.title;
+  info.title = info.textContent;
+  sub.textContent = autoplay ? "" : (s.caption || s.narration);
+  if (autoplay) { playing = true; last = performance.now(); narrate(s, offset / 1000, true); requestAnimationFrame(tick); }
+  else { playing = false; if (seeked) narrate(s, offset / 1000, false); }
+  showProgress();
+  render();
+}
+
+// ---- progress bar: whole-video position, click / drag / arrow keys to seek ----
+function fmt(ms){ const t = Math.max(0, Math.round(ms / 1000)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); }
+function position(){ return starts[idx] + Math.min(elapsed, DATA.scenes[idx].durationSec * 1000); }
+function showProgress(){
+  if (dragging) return;
+  const g = position();
+  progEl.style.width = (total ? g / total * 100 : 0) + "%";
+  timeEl.textContent = fmt(g) + " / " + fmt(total);
+  progBar.setAttribute("aria-valuenow", Math.round(g / 1000));
+}
+function sceneAt(g){ let i = 0; while (i < starts.length - 1 && g >= starts[i + 1]) i++; return i; }
+function seekTo(g){
+  g = Math.max(0, Math.min(total - 1, g));
+  const i = sceneAt(g);
+  load(i, playing, g - starts[i], true);
+}
+function barPos(e){ const r = progBar.getBoundingClientRect(); return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)); }
+function preview(e){
+  const f = barPos(e), g = f * total, i = sceneAt(Math.min(total - 1, g));
+  tipEl.style.display = "block";
+  tipEl.textContent = fmt(g) + " · " + (i + 1) + ". " + DATA.scenes[i].title;
+  const r = progBar.getBoundingClientRect(), w = tipEl.offsetWidth / 2;  // keep the tooltip inside the bar
+  tipEl.style.left = Math.max(w, Math.min(r.width - w, f * r.width)) + "px";
+  return g;
+}
+progBar.addEventListener("pointerdown", e => {
+  if (e.button !== 0 || !total) return;
+  dragging = true; progBar.classList.add("drag"); progBar.setPointerCapture(e.pointerId);
+  progEl.style.width = barPos(e) * 100 + "%"; preview(e); e.preventDefault();
+});
+progBar.addEventListener("pointermove", e => {
+  const g = preview(e);
+  if (dragging) { progEl.style.width = g / total * 100 + "%"; timeEl.textContent = fmt(g) + " / " + fmt(total); }
+});
+function endDrag(e, commit){
+  if (!dragging) return;
+  dragging = false; progBar.classList.remove("drag");
+  if (commit) seekTo(barPos(e) * total); else showProgress();
+}
+progBar.addEventListener("pointerup", e => endDrag(e, true));
+progBar.addEventListener("pointercancel", e => endDrag(e, false));
+progBar.addEventListener("pointerleave", () => { if (!dragging) tipEl.style.display = "none"; });
+progBar.setAttribute("aria-valuemin", "0"); progBar.setAttribute("aria-valuemax", String(Math.round(total / 1000)));
+starts.slice(1).forEach(st => { const m = document.createElement("span"); m.className = "mark"; m.style.left = (st / total * 100) + "%"; progBar.appendChild(m); });
+
+function tick(now){
+  if (!playing) return;
+  if (holdUntil) {
+    if (holdUntil === Infinity) {
+      // Release `lat` ms after the moment the audio actually started (back-dated by what already played).
+      const ahead = mode === "audio" ? au.currentTime - holdAudioT : 0;
+      if (ahead > 0) holdUntil = now + lat - ahead * 1000 / nRate;
+      else if (now - holdSince > 3000) holdUntil = now + lat; // audio never started
+    }
+    if (now < holdUntil) { last = now; requestAnimationFrame(tick); return; }
+    holdUntil = 0; last = now; post("player:play");
+  }
+  elapsed += (now - last) * vRate; last = now;
+  // Keep re-sending the speed until the scene confirms it (covers lost or early messages).
+  if (ackRate !== vRate && now - lastRatePost > 400) { lastRatePost = now; post("player:rate", { rate: vRate }); }
+  const dur = DATA.scenes[idx].durationSec * 1000;
+  showProgress();
+  if (elapsed >= dur && speechDone) {
+    if (idx < DATA.scenes.length - 1) return load(idx + 1, true);
+    playing = false; render(); return;
+  }
+  requestAnimationFrame(tick);
+}
+
+function toggle(){
+  if (playing) { playing = false; holdUntil = 0; post("player:pause"); pauseNarration(); }
+  else if (!started || (idx === DATA.scenes.length - 1 && elapsed >= DATA.scenes[idx].durationSec * 1000 && speechDone)) {
+    return load(started ? 0 : idx, true);
+  } else {
+    playing = true; last = performance.now(); startHold(mode === "audio" && !speechDone, au.currentTime);
+    if (!holdUntil) post("player:play");
+    resumeNarration(); requestAnimationFrame(tick);
+  }
+  render();
+}
+function render(){ playBtn.textContent = playing ? "⏸ 일시정지" : "▶ 재생"; document.getElementById("voice").textContent = tts ? "🔊" : "🔇"; }
+
+playBtn.onclick = toggle;
+document.getElementById("prev").onclick = () => load(Math.max(0, idx - 1), true);
+document.getElementById("next").onclick = () => load(Math.min(DATA.scenes.length - 1, idx + 1), true);
+document.getElementById("voice").onclick = () => { tts = !tts; if (!tts) { token++; resetSpeech(); speechDone = true; } render(); };
+const vSel = document.getElementById("vrate"), nSel = document.getElementById("nrate"), linkBtn = document.getElementById("link");
+function setRates(v, n){
+  vRate = v; nRate = n; vSel.value = String(v); nSel.value = String(n);
+  linkBtn.setAttribute("aria-pressed", String(linked));
+  au.defaultPlaybackRate = au.playbackRate = nRate;
+  ackRate = 0; post("player:rate", { rate: vRate });
+  try { localStorage.setItem("player:rates", JSON.stringify({ v: vRate, n: nRate, l: linked })); } catch (e) {}
+}
+// The scene reports the speed it applied; flag the control if the scene never confirms.
+addEventListener("message", e => {
+  if (e.source === frame.contentWindow && e.data && e.data.type === "scene:rate") { ackRate = e.data.rate; vSel.style.borderColor = ""; vSel.title = ""; }
+});
+setInterval(() => {
+  const bad = playing && ackRate !== vRate;
+  vSel.style.borderColor = bad ? "#ff5d73" : ""; vSel.title = bad ? "장면이 화면 속도를 적용하지 못했습니다" : "";
+}, 1500);
+vSel.onchange = () => { const v = +vSel.value; setRates(v, linked ? v : nRate); };
+nSel.onchange = () => { const n = +nSel.value; setRates(linked ? n : vRate, n); };
+linkBtn.onclick = () => { linked = !linked; setRates(vRate, linked ? vRate : nRate); };
+setRates(vRate, nRate);
+const latSel = document.getElementById("lat");
+if (![...latSel.options].some(o => +o.value === lat)) latSel.add(new Option(lat + "ms", String(lat)));
+latSel.value = String(lat);
+latSel.onchange = () => { lat = +latSel.value; try { localStorage.setItem("player:latency", String(lat)); } catch (e) {} };
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "SELECT") return;
+  if (e.code === "Space") { e.preventDefault(); toggle(); }
+  else if (e.code === "ArrowLeft" || e.code === "ArrowRight") { e.preventDefault(); seekTo(position() + (e.code === "ArrowLeft" ? -5000 : 5000)); }
+});
+// Fullscreen the whole page so the subtitle bar below the stage stays visible.
+stage.ondblclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+if (DATA.scenes.length) load(0, false); else info.textContent = "완성된 장면이 없습니다.";
+</script>
+</body>
+</html>

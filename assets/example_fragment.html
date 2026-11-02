@@ -1,0 +1,37 @@
+<style>
+.bloom{--bx:290px;--by:60px;}
+.qb{position:absolute;left:340px;top:170px;width:600px;height:64px;border-radius:32px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:24px;font-weight:700;}
+.qb .ico{color:var(--secondary);font-size:28px;}
+.side{position:absolute;top:262px;width:552px;height:350px;border-radius:18px;padding:20px 24px;}
+.side .hd{display:flex;align-items:center;gap:10px;font-size:26px;font-weight:800;color:var(--c);}
+.side .k{font-size:18px;font-weight:700;letter-spacing:.14em;color:var(--faint);margin-top:18px;}
+.see{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+.ans{margin-top:12px;border-radius:14px;padding:16px 18px;font-size:20px;line-height:1.5;min-height:120px;}
+.guess{color:var(--dim);font-style:italic;}
+.guess span{display:inline-block;filter:blur(2.5px);opacity:.75;}
+.src{display:inline-flex;margin-top:10px;}
+</style>
+<!--body-->
+<div class="cam">
+<div class="kicker">Ⅰ · RAG가 필요한 이유</div>
+<h1 class="h1">RAG 없이 vs RAG 적용</h1>
+<div class="qb glass pop lit" style="--d:{c2}s;--l:{c2+0.5}s">[[chat]] “B 제품 출시일이 왜 미뤄졌어?”</div>
+<div class="side glass in ng bd" style="left:72px;--d:{c3}s">
+ <div class="hd">[[no]] RAG 없이</div>
+ <div class="k">AI가 보는 것</div>
+ <div class="see"><span class="chip">[[chat cy]] 질문만</span></div>
+ <div class="k">답변</div>
+ <div class="ans tint in" style="--d:{c3+2.6}s"><div class="guess">일반적인 이유를 추측해서 생성</div>
+  <div class="guess" style="margin-top:8px"><span>“보통 출시일은 여러 사정으로…”</span></div>
+  <div class="src"><span class="tag" style="--c:var(--warn)">출처 없음</span></div></div>
+</div>
+<div class="side glass in ok bd lit" style="left:656px;--d:{c4}s;--l:{c5}s;--lc:#3ddc97">
+ <div class="hd">[[ok]] RAG 적용</div>
+ <div class="k">AI가 보는 것</div>
+ <div class="see"><span class="chip">[[chat cy]] 질문</span><span class="chip pop" style="--d:{c4+1.6}s">+</span>
+  <span class="chip pop" style="--d:{c4+2.0}s;border-color:var(--amber)">[[file am]] 회의록 3건의 관련 문단</span></div>
+ <div class="k">답변</div>
+ <div class="ans tint in" style="--d:{c5}s">“<b>9.12. 회의록</b>에 따르면 <b class="gr">원재료 입고 지연</b>으로 <b class="gr">2주 연기</b>”
+  <div class="src pop" style="--d:{c6}s"><span class="tag" style="--c:#3ddc97">출처: 회의록 #41</span></div></div>
+</div>
+</div>

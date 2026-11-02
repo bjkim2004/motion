@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}}</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0b0c10;color:#e8e8ee;font-family:"Pretendard Variable",Pretendard,"Malgun Gothic",sans-serif}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:4px 6px}
+  :root{--w:min(100%,calc((100vh - 164px) * 16 / 9))}
+  h1{font-size:13px;line-height:16px;font-weight:600;margin:0;opacity:.7;text-align:center;width:var(--w);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #stage{position:relative;width:var(--w);aspect-ratio:16/9;background:#05070f;overflow:hidden;border-radius:10px}
+  #stage iframe{position:absolute;left:0;top:0;width:1280px;height:720px;border:0;transform-origin:0 0}
+  #sub{width:var(--w);min-height:calc(2 * 1.4em + 6px);display:flex;align-items:center;justify-content:center;padding:3px 24px;border-radius:10px;background:#0c0d10;color:#f4f4f5;font-size:clamp(15px,1.5vw,21px);font-weight:500;line-height:1.4;text-align:center;text-wrap:balance;word-break:keep-all}
+  #bar{width:var(--w);display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+  button,select{background:#23252e;color:#e8e8ee;border:1px solid #363947;border-radius:8px;padding:5px 11px;font-size:14px;font-family:inherit;cursor:pointer}
+  button:hover,select:hover{background:#2d303b}
+  #prog{flex:1 1 100%;order:-1;height:20px;position:relative;cursor:pointer;touch-action:none}
+  #prog::before{content:"";position:absolute;left:0;right:0;top:7px;height:6px;background:#23252e;border-radius:3px}
+  #prog:hover::before,#prog.drag::before{top:6px;height:8px}
+  #prog div{position:absolute;left:0;top:7px;height:6px;width:0;background:#7c8cff;border-radius:3px;pointer-events:none}
+  #prog:hover div,#prog.drag div{top:6px;height:8px}
+  #prog div::after{content:"";position:absolute;right:-7px;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:#dfe3ff;box-shadow:0 0 0 3px #7c8cff55;opacity:0}
+  #prog:hover div::after,#prog.drag div::after{opacity:1}
+  #prog .mark{position:absolute;top:7px;width:2px;height:6px;background:#0b0c10;pointer-events:none}
+  #tip{position:absolute;bottom:22px;transform:translateX(-50%);background:#000d;color:#fff;padding:3px 8px;border-radius:6px;font-size:12px;white-space:nowrap;pointer-events:none;display:none}
+  #time{font-size:13px;opacity:.8;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #info{font-size:13px;opacity:.75;flex:1 1 0;min-width:0;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rate{display:flex;align-items:center;gap:5px;font-size:13px;opacity:.9}
+  .rate select{padding:6px 6px}
+  #link[aria-pressed="true"]{background:#2f3550;border-color:#7c8cff}
+</style>
+</head>
+<body>
+<h1>{{TITLE}}</h1>
+<div id="stage"><iframe id="frame" sandbox="allow-scripts" title="scene"></iframe></div>
+<div id="sub" aria-live="polite"></div>
+<div id="bar">
+  <button id="prev" aria-label="이전">⏮</button>
+  <button id="play">▶ 재생</button>
+  <button id="next" aria-label="다음">⏭</button>
+  <div id="prog" role="slider" tabindex="0" aria-label="재생 위치" title="클릭하거나 드래그해서 이동 (←/→ 5초)"><div></div><span id="tip"></span></div>
+  <span id="time"></span>
+  <div id="info"></div>
+  <label class="rate" title="장면 애니메이션 속도">화면
+    <select id="vrate"><option>0.5</option><option>0.75</option><option>0.85</option><option>0.9</option><option selected>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option></select></label>
+  <button id="link" aria-pressed="true" title="화면·내레이션 속도 함께 바꾸기">🔗</button>
+  <label class="rate" title="내레이션 속도">내레이션
+    <select id="nrate"><option>0.5</option><option>0.75</option><option>0.85</option><option>0.9</option><option selected>1</option><option>1.25</option><option>1.5</option><option>1.75</option><option>2</option></select></label>
+  <button id="voice" title="내레이션 켜기/끄기">🔊</button>
+  <label class="rate" title="HDMI·빔프로젝터에서 음성이 화면보다 늦게 들리면 값을 올리세요. 화면과 자막을 그만큼 늦게 시작해 음성에 맞춥니다.">음성 보정
+    <select id="lat"><option value="0" selected>0ms</option><option value="50">50ms</option><option value="100">100ms</option><option value="150">150ms</option><option value="200">200ms</option><option value="250">250ms</option><option value="300">300ms</option><option value="400">400ms</option><option value="500">500ms</option><option value="700">700ms</option><option value="1000">1000ms</option></select></label>
+</div>
+<script>
