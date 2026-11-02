@@ -13,6 +13,7 @@ def main(d, outdir):
     for s in spec["scenes"]:
         t = tts[s["id"]]
         assert t["narration"] == s["narration"], "narration changed; rerun tts.py for " + s["id"]
+        assert t.get("voice", common.DEFAULT_VOICE) == s.get("voice", common.DEFAULT_VOICE), "voice changed; rerun tts.py for " + s["id"]
         html = open(os.path.join(d, s["id"] + ".html"), encoding="utf-8").read()
         mp3 = open(os.path.join(d, "audio", s["id"] + ".mp3"), "rb").read()
         # Optional "subtitle": on-screen text (original spelling, e.g. English terms) shown in place of the

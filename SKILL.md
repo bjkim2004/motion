@@ -1,6 +1,6 @@
 ---
 name: motion
-description: 문서(pptx, docx, pdf, ipynb, md, txt, html)를 지정하면 한국어 내레이션·자막이 입혀진 모션 영상(장면별 애니메이션이 담긴 단일 HTML 플레이어)을 만들고, 장면별 화면 캡처 PNG까지 생성한다. 만든 HTML 플레이어를 MP4로 변환할 수도 있다. "이 문서로 영상 만들어줘", "강의자료를 모션 영상으로", "PPT를 내레이션 영상으로", "슬라이드를 애니메이션으로", "장면 캡처해줘", "문제제기 영상", "docs 폴더 전부 영상화", "HTML을 MP4로 변환해줘"처럼 문서나 강의자료를 설명 영상으로 바꾸거나 기존 영상을 고치고 다시 캡처하려는 요청에는 '영상'이라는 말이 분명하지 않아도 이 스킬을 사용한다. 문서 없이 주제만으로 만드는 영상이나 웹사이트 홍보 영상, HyperFrames 작업에는 사용하지 않는다.
+description: 문서(pptx, docx, pdf, ipynb, md, txt, html)를 지정하면 여성·남성 성우가 번갈아 설명하는 한국어 내레이션과 자막이 입혀진 모션 영상(장면별 애니메이션이 담긴 단일 HTML 플레이어)을 만들고, 장면별 화면 캡처 PNG까지 생성한다. 만든 HTML 플레이어를 MP4로 변환할 수도 있다. "이 문서로 영상 만들어줘", "강의자료를 모션 영상으로", "PPT를 내레이션 영상으로", "슬라이드를 애니메이션으로", "장면 캡처해줘", "문제제기 영상", "docs 폴더 전부 영상화", "HTML을 MP4로 변환해줘"처럼 문서나 강의자료를 설명 영상으로 바꾸거나 기존 영상을 고치고 다시 캡처하려는 요청에는 '영상'이라는 말이 분명하지 않아도 이 스킬을 사용한다. 문서 없이 주제만으로 만드는 영상이나 웹사이트 홍보 영상, HyperFrames 작업에는 사용하지 않는다.
 ---
 
 # 문서 → 모션 영상 + 화면 캡처
@@ -34,10 +34,10 @@ python M/scripts/ingest.py "<문서>" <프로젝트>
 
 ### 2. 대본 작성 → TTS
 
-`<프로젝트>/script.json`을 쓴다. 자막 표기(영어 원문)로 쓰면 내레이션은 자동으로 한글 발음이 된다.
+`<프로젝트>/script.json`을 쓴다. 자막 표기(영어 원문)로 쓰면 내레이션은 자동으로 한글 발음이 된다. `voices`를 기본값 `alternate`로 두면 장면마다 여성(SunHi)과 남성(InJoon) 성우가 번갈아 말한다. 사용자가 한 성우만 원하면 `female`이나 `male`로 쓴다.
 
 ```json
-{"title": "강의 제목", "output": "원본 문서명",
+{"title": "강의 제목", "output": "원본 문서명", "voices": "alternate",
  "pron": {"Qdrant": "큐드란트"},
  "scenes": [{"id": "s01", "title": "장면 제목", "lines": ["한 문장.", "또 한 문장."]}]}
 ```
@@ -89,4 +89,4 @@ python M/scripts/mp4.py <출력>/<output>.html --no-subs # 자막 없는 1280×7
 
 ## 기존 영상 수정
 
-프로젝트 폴더가 남아 있으면 `script.json`이나 `src/sNN.html`을 고치고 필요한 단계부터 다시 실행한다. 대본을 고쳤으면 `mk_scenes → tts → gen → check → build → capture`, 장면만 고쳤으면 `gen → check → build → capture`다. MP4를 만들었다면 `mp4`까지 다시 실행한다. `script.json` 없이 `scenes.json`만 있는 옛 프로젝트는 `scenes.json`을 직접 고치고 `mk_scenes`는 건너뛴다.
+프로젝트 폴더가 남아 있으면 `script.json`이나 `src/sNN.html`을 고치고 필요한 단계부터 다시 실행한다. 대본을 고쳤으면 `mk_scenes → tts → gen → check → build → capture`, 장면만 고쳤으면 `gen → check → build → capture`다. MP4를 만들었다면 `mp4`까지 다시 실행한다. `voices` 없이 만든 옛 프로젝트에서 `mk_scenes`를 다시 돌리면 번갈아 말하기가 적용되어 짝수 장면이 남성 음성으로 재합성된다. 음성을 유지하려면 `script.json`에 `"voices": "female"`을 넣는다. `script.json` 없이 `scenes.json`만 있는 옛 프로젝트는 `scenes.json`을 직접 고치고 `mk_scenes`는 건너뛴다.

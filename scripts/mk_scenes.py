@@ -1,8 +1,10 @@
 """Turn script.json (written in subtitle spelling) into scenes.json with Hangul-pronunciation narration.
 
 usage: python mk_scenes.py <project>
-script.json: {"title", "output", "pron": {"Qdrant":"큐드란트", ...},
-              "scenes": [{"id":"s01", "title":"...", "lines":["문장 하나.", ["내레이션 문장.", "자막 문장."], ...]}]}
+script.json: {"title", "output", "voices": "alternate", "pron": {"Qdrant":"큐드란트", ...},
+              "scenes": [{"id":"s01", "title":"...", "voice": "male", "lines":["문장 하나.", ["내레이션 문장.", "자막 문장."], ...]}]}
+"voices" is alternate (default: scenes take turns, female first), female or male. A scene's "voice" overrides it,
+and the next scene alternates from there.
 A line is one sentence = one subtitle. Terms come from assets/pron.json plus "pron" (which wins).
 Warns about Latin text or symbols left in narration, because the TTS voice mangles them.
 """
@@ -16,8 +18,14 @@ def main(d):
     terms = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(map(re.escape, sorted(pron, key=len, reverse=True))) + r")(?![A-Za-z0-9])")
     def speak(s):
         return re.sub(r"[\"“”]", "", terms.sub(lambda m: pron[m.group(0)], s))
-    scenes = []
+    mode = src.get("voices", "alternate")
+    if mode != "alternate" and mode not in common.VOICES:
+        raise SystemExit(f'"voices" must be alternate, female or male, not {mode!r}')
+    scenes, last = [], "male"
     for s in src["scenes"]:
+        last = s.get("voice") or (mode if mode != "alternate" else "female" if last == "male" else "male")
+        if last not in common.VOICES:
+            raise SystemExit(f'{s["id"]}: "voice" must be female or male, not {last!r}')
         narr, subs = [], []
         for line in s["lines"]:
             sub, say = (line, speak(line)) if isinstance(line, str) else (line[1], line[0])
@@ -32,7 +40,7 @@ def main(d):
             if sym:
                 print("  SYMBOL?", s["id"], sym, "write it as spoken:", say)
             narr.append(say); subs.append(sub)
-        e = {"id": s["id"], "title": s["title"], "narration": " ".join(narr)}
+        e = {"id": s["id"], "title": s["title"], "voice": last, "narration": " ".join(narr)}
         if subs != narr:
             e["subtitle"] = " ".join(subs)
         scenes.append(e)

@@ -1,6 +1,6 @@
 # motion
 
-문서(pptx, docx, pdf, ipynb, md, txt, html)를 한국어 내레이션·자막이 있는 모션 영상과 장면별 화면 캡처로 바꾸고, 필요하면 MP4로 변환하는 Claude Code 스킬입니다.
+문서(pptx, docx, pdf, ipynb, md, txt, html)를 여성·남성 성우가 장면마다 번갈아 설명하는 한국어 내레이션·자막 모션 영상과 장면별 화면 캡처로 바꾸고, 필요하면 MP4로 변환하는 Claude Code 스킬입니다.
 
 ## 설치
 
@@ -23,6 +23,10 @@ python scripts/mp4.py outputs/강의자료.html --no-subs  # 1280×720, 자막 �
 ```
 
 이 스킬의 `build.py`가 만든 플레이어 HTML만 변환할 수 있습니다.
+
+## 성우
+
+기본으로 여성(SunHi)과 남성(InJoon) 성우가 장면마다 번갈아 말합니다. `script.json`의 `"voices"`를 `"female"`이나 `"male"`로 바꾸면 한 성우로 고정하고, 장면의 `"voice"`로 그 장면만 지정할 수 있습니다.
 
 ## 결과물
 

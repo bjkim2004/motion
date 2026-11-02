@@ -2,8 +2,8 @@
 
 usage: python tts.py <project>
 Reads scenes.json -> writes audio/<id>.mp3 and tts.json
-tts.json: {id: {"narration":..., "audioSec":float, "cues":[{start,end,text}]}}
-Scenes whose narration is unchanged are skipped.
+tts.json: {id: {"narration":..., "voice":..., "audioSec":float, "cues":[{start,end,text}]}}
+Scenes whose narration and voice are unchanged are skipped.
 """
 import asyncio, json, os, sys
 import edge_tts
@@ -15,10 +15,10 @@ import common
 _C.WSS_URL = _CM.WSS_URL = ("wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
                             "?Ocp-Apim-Subscription-Key=" + _C.TRUSTED_CLIENT_TOKEN)
 
-VOICE, RATE = "ko-KR-SunHiNeural", "+8%"
+RATE = "+8%"
 
-async def synth(text, path):
-    c = edge_tts.Communicate(text, VOICE, rate=RATE, boundary="SentenceBoundary")
+async def synth(text, voice, path):
+    c = edge_tts.Communicate(text, common.VOICES[voice], rate=RATE, boundary="SentenceBoundary")
     buf, cues = bytearray(), []
     async for ch in c.stream():
         if ch["type"] == "audio":
@@ -38,20 +38,21 @@ async def main(d):
     for s in scenes:
         mp = os.path.join(d, "audio", s["id"] + ".mp3")
         o = old.get(s["id"])
-        if o and o["narration"] == s["narration"] and os.path.exists(mp):
+        voice = s.get("voice", common.DEFAULT_VOICE)
+        if o and o["narration"] == s["narration"] and o.get("voice", common.DEFAULT_VOICE) == voice and os.path.exists(mp):
             out[s["id"]] = o
         else:
             for attempt in range(4):
                 try:
-                    cues = await synth(s["narration"], mp); break
+                    cues = await synth(s["narration"], voice, mp); break
                 except Exception as e:
                     print("retry", s["id"], e); await asyncio.sleep(3)
             else:
                 raise SystemExit("TTS failed for " + s["id"])
-            out[s["id"]] = {"narration": s["narration"], "audioSec": round(MP3(mp).info.length, 3), "cues": cues}
+            out[s["id"]] = {"narration": s["narration"], "voice": voice, "audioSec": round(MP3(mp).info.length, 3), "cues": cues}
             json.dump({**old, **out}, open(tp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)  # keep progress on failure
         r = out[s["id"]]
-        print(f'{s["id"]}  {r["audioSec"]:.1f}s' + ("  LONG? over 45s, consider splitting" if r["audioSec"] > 45 else ""))
+        print(f'{s["id"]}  {voice}  {r["audioSec"]:.1f}s' + ("  LONG? over 45s, consider splitting" if r["audioSec"] > 45 else ""))
         for c in r["cues"]:
             print(f'   {c["start"]:6.2f}-{c["end"]:6.2f}  {c["text"]}')
     json.dump(out, open(tp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)

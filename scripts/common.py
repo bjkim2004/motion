@@ -6,6 +6,10 @@ ASSETS = os.path.join(HERE, "..", "assets")
 for _s in (sys.stdout, sys.stderr):
     _s.reconfigure(encoding="utf-8", errors="replace")
 
+# Scenes without "voice" (projects from before voices existed) were synthesized in the first voice.
+VOICES = {"female": "ko-KR-SunHiNeural", "male": "ko-KR-InJoonNeural"}
+DEFAULT_VOICE = "female"
+
 def asset(name):
     return open(os.path.join(ASSETS, name), encoding="utf-8").read()
 
